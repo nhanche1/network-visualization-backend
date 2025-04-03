@@ -6,10 +6,12 @@ from collections import defaultdict, Counter
 import zipfile
 import os
 import io
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)  # Thêm CORS để frontend truy cập được
 
-# Logic từ mã Python gốc (được rút gọn và tái sử dụng)
+# Hàm phụ trợ từ mã gốc
 def standardize_system_name(system):
     system = str(system).upper().strip()
     if '2G' in system or 'GSM' in system: return '2G'
@@ -58,8 +60,46 @@ def get_data_layer(data_usage, tech):
         elif data_usage > 50: return 2
         else: return 1
 
+def process_cell(cell, sites):
+    PI = math.pi
+    COLORS = {
+        'L1': 'FF00FF00', 'L2': 'FFFFFF00', 'L3': 'FF00FFFF',
+        'L4': 'FF9314FF', 'L5': 'FF0000FF', 'L6': 'FFCD0000'
+    }
+    FREQ_CONFIG = {
+        '2G': {'900': {'radius': 0.0017, 'beamwidth': 10}, '1800': {'radius': 0.00125, 'beamwidth': 10}},
+        '3G': {'10587': {'radius': 0.00097, 'beamwidth': 60}},
+        '4G': {'1874': {'radius': 0.00059, 'beamwidth': 80}},
+        '5G': {'3800': {'radius': 0.0004, 'beamwidth': 100}}
+    }
+    site_data = sites[cell['site_id']]
+    tech = standardize_system_name(cell['system'])
+    freq = standardize_frequency(cell['frequency'], cell['system'])
+    kml_lines = []
+
+    try:
+        config = FREQ_CONFIG[tech].get(freq, {'radius': 0.0002, 'beamwidth': 90})
+        radius = config['radius']
+        beamwidth = config['beamwidth']
+    except KeyError:
+        radius, beamwidth = 0.0002, 90
+
+    layer = get_data_layer(cell['data_usage'], tech)
+    kml_lines.append(f'<Placemark>\n<name>{cell["cell_name"]}</name>\n')
+    kml_lines.append(f'<styleUrl>#Style_L{layer}</styleUrl>\n')
+    kml_lines.append('<Polygon>\n<outerBoundaryIs>\n<LinearRing>\n<coordinates>\n')
+    kml_lines.append(f'{site_data["lon"]},{site_data["lat"]},0\n')
+    azimuth = float(cell['azimuth'])
+    half_bw = beamwidth / 2
+    for i in range(12, -1, -1):
+        angle = azimuth - half_bw + (i * beamwidth / 12)
+        rad_angle = PI * angle / 180
+        kml_lines.append(f'{site_data["lon"] + radius * math.sin(rad_angle)},{site_data["lat"] + radius * math.cos(rad_angle)},0\n')
+    kml_lines.append(f'{site_data["lon"]},{site_data["lat"]},0\n')
+    kml_lines.append('</coordinates>\n</LinearRing>\n</outerBoundaryIs>\n</Polygon>\n</Placemark>\n')
+    return ''.join(kml_lines)
+
 def create_coverage_kml(csv_content):
-    # Logic tạo KML từ mã gốc (rút gọn)
     sites = defaultdict(dict)
     cells = []
     with io.StringIO(csv_content) as f:
@@ -68,12 +108,11 @@ def create_coverage_kml(csv_content):
             site_id = row['SITEID']
             lat = float(row['LAT'])
             lon = float(row['LONG'])
-            if site_id not in sites:
-                sites[site_id] = {'lat': lat, 'lon': lon}
+            sites[site_id] = {'lat': lat, 'lon': lon}
             cells.append({
                 'site_id': site_id, 'cell_name': row['CELLNAME'], 'system': row['SYS'],
-                'frequency': row['ARFCN/UARFCN/EARFCN/NR-ARFCN'], 'azimuth': float(row['AZIMUTH']),
-                'data_usage': float(row['DATA']), 'type': int(row['TYPE'])
+                'frequency': row['ARFCN/UARFCN/EARFCN/NR-ARFCN'], 'azimuth': row['AZIMUTH'],
+                'data_usage': row['DATA']
             })
 
     kml_lines = [
@@ -82,7 +121,12 @@ def create_coverage_kml(csv_content):
         '<Document>\n',
         f'<name>Network_Coverage_{datetime.now().strftime("%Y%m%d_%H%M")}</name>\n'
     ]
-    # Thêm logic tạo KML đầy đủ từ mã gốc nếu cần
+    for layer in ['L1', 'L2', 'L3', 'L4', 'L5', 'L6']:
+        kml_lines.append(f'<Style id="Style_{layer}">\n<LineStyle><color>{COLORS[layer]}</color></LineStyle>\n</Style>\n')
+    
+    for cell in cells:
+        kml_lines.append(process_cell(cell, sites))
+    
     kml_lines.append('</Document>\n</kml>\n')
     return ''.join(kml_lines)
 
@@ -99,8 +143,7 @@ def create_points_kml(csv_content, color, size, icon):
         '<Document>\n',
         f'<name>Network_Sites_{datetime.now().strftime("%Y%m%d_%H%M")}</name>\n',
         f'<Style id="customStyle">\n<IconStyle>\n<color>{color}</color>\n<scale>{size}</scale>\n',
-        f'<Icon><href>http://maps.google.com/mapfiles/kml/shapes/{icon}.png</href></Icon>\n',
-        '</IconStyle>\n</Style>\n'
+        f'<Icon><href>http://maps.google.com/mapfiles/kml/shapes/{icon}.png</href></Icon>\n</IconStyle>\n</Style>\n'
     ]
     for site in sites:
         kml_lines.append(f'<Placemark>\n<name>{site["site_id"]}</name>\n')
@@ -122,12 +165,12 @@ def convert_csv_to_clf(csv_content):
             clf_lines.append(line)
     return '\n'.join(clf_lines)
 
+# API Endpoints
 @app.route('/coverage-kmz', methods=['POST'])
 def coverage_kmz():
     file = request.files['file']
     csv_content = file.read().decode('utf-8-sig')
     kml_content = create_coverage_kml(csv_content)
-    
     temp_kml = "temp.kml"
     output_kmz = io.BytesIO()
     with open(temp_kml, 'w', encoding='utf-8') as kml:
@@ -135,7 +178,6 @@ def coverage_kmz():
     with zipfile.ZipFile(output_kmz, 'w', zipfile.ZIP_DEFLATED) as zf:
         zf.write(temp_kml, arcname="doc.kml")
     os.remove(temp_kml)
-    
     output_kmz.seek(0)
     return send_file(output_kmz, download_name=f"Network_Coverage_{datetime.now().strftime('%Y%m%d_%H%M')}.kmz", as_attachment=True)
 
@@ -146,9 +188,7 @@ def points_kmz():
     color = request.form.get('color', 'ff00ff00')
     size = request.form.get('size', '1.0')
     icon = request.form.get('icon', 'placemark_circle')
-    
     kml_content = create_points_kml(csv_content, color, size, icon)
-    
     temp_kml = "temp.kml"
     output_kmz = io.BytesIO()
     with open(temp_kml, 'w', encoding='utf-8') as kml:
@@ -156,7 +196,6 @@ def points_kmz():
     with zipfile.ZipFile(output_kmz, 'w', zipfile.ZIP_DEFLATED) as zf:
         zf.write(temp_kml, arcname="doc.kml")
     os.remove(temp_kml)
-    
     output_kmz.seek(0)
     return send_file(output_kmz, download_name=f"Network_Sites_{datetime.now().strftime('%Y%m%d_%H%M')}.kmz", as_attachment=True)
 
@@ -165,7 +204,6 @@ def convert_clf():
     file = request.files['file']
     csv_content = file.read().decode('utf-8-sig')
     clf_content = convert_csv_to_clf(csv_content)
-    
     return Response(clf_content, mimetype='text/plain', 
                     headers={"Content-Disposition": f"attachment;filename=Network_Data_{datetime.now().strftime('%Y%m%d_%H%M')}.clf"})
 
