@@ -10,9 +10,9 @@ from flask_cors import CORS
 from concurrent.futures import ThreadPoolExecutor
 
 app = Flask(__name__)
-CORS(app)  # Hỗ trợ CORS cho frontend
+CORS(app)
 
-# Hàm phụ trợ từ mã gốc
+# Hàm phụ trợ (giữ nguyên từ mã gốc)
 def standardize_system_name(system):
     system = str(system).upper().strip()
     if '2G' in system or 'GSM' in system: return '2G'
@@ -103,8 +103,7 @@ def create_points_kml(csv_content, color, size, icon):
         '<Folder>\n<name>Sites</name>\n<visibility>0</visibility>\n'
     ]
 
-    total_sites = len(sites)
-    for i, site in enumerate(sites, 1):
+    for site in sites:
         kml_lines.append(f'<Placemark>\n<name>{site["site_id"]}</name>\n')
         kml_lines.append('<Snippet maxLines="0"></Snippet>\n')
         kml_lines.append('<description><![CDATA[\n')
@@ -148,87 +147,8 @@ def convert_csv_to_clf(csv_content):
                 )
                 clf_lines.append(line)
             except Exception as e:
-                continue  # Bỏ qua lỗi, tương tự mã gốc
+                continue
     return '\n'.join(clf_lines)
-
-# Giữ nguyên logic Coverage KMZ từ mã trước (giả sử đã đúng)
-def process_cell(cell, sites):  # Đã có trong mã trước, giữ nguyên
-    # Logic từ mã gốc
-    PI = math.pi
-    COLORS = {
-        'L1': 'FF00FF00', 'L2': 'FFFFFF00', 'L3': 'FF00FFFF',
-        'L4': 'FF9314FF', 'L5': 'FF0000FF', 'L6': 'FFCD0000'
-    }
-    FREQ_CONFIG = {
-        '2G': {
-            '900': {'radius': 0.0017, 'beamwidth': 10, 'ibc_radius': 0.00015, 'ibc_beamwidth': 360},
-            '1800': {'radius': 0.00125, 'beamwidth': 10, 'ibc_radius': 0.00012, 'ibc_beamwidth': 360}
-        },
-        '3G': {
-            '3088': {'radius': 0.00109, 'beamwidth': 55, 'ibc_radius': 0.0006, 'ibc_beamwidth': 360},
-            '10562': {'radius': 0.00103, 'beamwidth': 60, 'ibc_radius': 0.0006, 'ibc_beamwidth': 360},
-            '10587': {'radius': 0.00097, 'beamwidth': 60, 'ibc_radius': 0.00054, 'ibc_beamwidth': 360},
-            '10612': {'radius': 0.00091, 'beamwidth': 60, 'ibc_radius': 0.00048, 'ibc_beamwidth': 360}
-        },
-        '4G': {
-            '25': {'radius': 0.00071, 'beamwidth': 80, 'ibc_radius': 0.00042, 'ibc_beamwidth': 360},
-            '50': {'radius': 0.00071, 'beamwidth': 80, 'ibc_radius': 0.00042, 'ibc_beamwidth': 360},
-            '1501': {'radius': 0.00065, 'beamwidth': 80, 'ibc_radius': 0.00039, 'ibc_beamwidth': 360},
-            '1874': {'radius': 0.00059, 'beamwidth': 80, 'ibc_radius': 0.00036, 'ibc_beamwidth': 360},
-            '900': {'radius': 0.00053, 'beamwidth': 90, 'ibc_radius': 0.00033, 'ibc_beamwidth': 360},
-            '3150': {'radius': 0.00047, 'beamwidth': 90, 'ibc_radius': 0.0003, 'ibc_beamwidth': 360}
-        },
-        '5G': {
-            '3800': {'radius': 0.0004, 'beamwidth': 100, 'ibc_radius': 0.0005, 'ibc_beamwidth': 360}
-        }
-    }
-    site_data = sites[cell['site_id']]
-    tech = standardize_system_name(cell['system'])
-    freq = standardize_frequency(cell['frequency'], cell['system'])
-    kml_lines = []
-
-    try:
-        config = FREQ_CONFIG[tech][freq]
-        radius = config['ibc_radius'] if cell['type'] == 2 else config['radius']
-        beamwidth = config['ibc_beamwidth'] if cell['type'] == 2 else config['beamwidth']
-        site_cell_count = Counter(cell['site_id'] for cell in cells)[cell['site_id']]
-        if site_cell_count > 3: radius *= 0.7
-        elif site_cell_count > 1: radius *= 0.85
-        if cell['type'] == 1: radius *= 0.1
-        if cell['type'] == 2: radius *= 0.3
-        if cell['type'] == 1 and cell['site_id'] in {c['site_id'] for c in cells if c['type'] == 2}: radius *= 0.5
-    except KeyError:
-        radius = 0.00014 if cell['type'] == 2 else 0.0002
-        beamwidth = 65 if cell['type'] == 2 else 90
-        if cell['type'] == 1: radius *= 0.3
-
-    layer = get_data_layer(cell['data_usage'], tech)
-    kml_lines.append(f'<Placemark>\n<name>{cell["cell_name"]}</name>\n')
-    kml_lines.append(f'<styleUrl>#Style_L{layer}</styleUrl>\n')
-    kml_lines.append('<Polygon>\n<outerBoundaryIs>\n<LinearRing>\n<coordinates>\n')
-    if cell['type'] == 0:
-        kml_lines.append(f'{site_data["lon"]},{site_data["lat"]},0\n')
-        azimuth = float(cell['azimuth'])
-        half_bw = beamwidth / 2
-        for i in range(12, -1, -1):
-            angle = azimuth - half_bw + (i * beamwidth / 12)
-            rad_angle = PI * angle / 180
-            kml_lines.append(f'{site_data["lon"] + radius * math.sin(rad_angle)},{site_data["lat"] + radius * math.cos(rad_angle)},0\n')
-        kml_lines.append(f'{site_data["lon"]},{site_data["lat"]},0\n')
-    else:
-        steps = 24
-        for i in range(steps + 1):
-            angle = 2 * PI * i / steps
-            kml_lines.append(f'{site_data["lon"] + radius * math.cos(angle)},{site_data["lat"] + radius * math.sin(angle)},0\n')
-    kml_lines.append('</coordinates>\n</LinearRing>\n</outerBoundaryIs>\n</Polygon>\n')
-    kml_lines.append('</Placemark>\n')
-    return ''.join(kml_lines)
-
-def create_coverage_kml(csv_content):
-    # Logic đầy đủ từ mã gốc ở đây (giữ nguyên)
-    # Tôi giả sử bạn đã xác nhận Coverage KMZ đúng, nên giữ nguyên
-    # Nếu cần, tôi sẽ cập nhật lại sau khi bạn phản hồi
-    pass
 
 # API Endpoints
 @app.route('/points-kmz', methods=['POST'])
@@ -242,15 +162,19 @@ def points_kmz():
         size = request.form.get('size', '1.0')
         icon = request.form.get('icon', 'placemark_circle')
         kml_content = create_points_kml(csv_content, color, size, icon)
-        temp_kml = "temp.kml"
+        
+        # Tạo file KMZ
         output_kmz = io.BytesIO()
-        with open(temp_kml, 'w', encoding='utf-8') as kml:
-            kml.write(kml_content)
         with zipfile.ZipFile(output_kmz, 'w', zipfile.ZIP_DEFLATED) as zf:
-            zf.write(temp_kml, arcname="doc.kml")
-        os.remove(temp_kml)
+            zf.writestr("doc.kml", kml_content)
         output_kmz.seek(0)
-        return send_file(output_kmz, download_name=f"Network_Sites_{datetime.now().strftime('%Y%m%d_%H%M')}.kmz", as_attachment=True)
+        
+        return send_file(
+            output_kmz,
+            mimetype='application/vnd.google-earth.kmz',
+            download_name=f"Network_Sites_{datetime.now().strftime('%Y%m%d_%H%M')}.kmz",
+            as_attachment=True
+        )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -262,31 +186,22 @@ def convert_clf():
         file = request.files['file']
         csv_content = file.read().decode('utf-8-sig')
         clf_content = convert_csv_to_clf(csv_content)
-        return Response(clf_content, mimetype='text/plain', 
-                        headers={"Content-Disposition": f"attachment;filename=Network_Data_{datetime.now().strftime('%Y%m%d_%H%M')}.clf"})
+        
+        return Response(
+            clf_content,
+            mimetype='text/plain',
+            headers={
+                "Content-Disposition": f"attachment;filename=Network_Data_{datetime.now().strftime('%Y%m%d_%H%M')}.clf"
+            }
+        )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# Endpoint Coverage KMZ (giữ nguyên nếu đã đúng)
+# Giữ nguyên endpoint Coverage KMZ nếu cần
 @app.route('/coverage-kmz', methods=['POST'])
 def coverage_kmz():
-    try:
-        if 'file' not in request.files:
-            return jsonify({"error": "No file uploaded"}), 400
-        file = request.files['file']
-        csv_content = file.read().decode('utf-8-sig')
-        kml_content = create_coverage_kml(csv_content)
-        temp_kml = "temp.kml"
-        output_kmz = io.BytesIO()
-        with open(temp_kml, 'w', encoding='utf-8') as kml:
-            kml.write(kml_content)
-        with zipfile.ZipFile(output_kmz, 'w', zipfile.ZIP_DEFLATED) as zf:
-            zf.write(temp_kml, arcname="doc.kml")
-        os.remove(temp_kml)
-        output_kmz.seek(0)
-        return send_file(output_kmz, download_name=f"Network_Coverage_{datetime.now().strftime('%Y%m%d_%H%M')}.kmz", as_attachment=True)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    # Logic giữ nguyên hoặc thêm nếu cần
+    return jsonify({"error": "Not implemented yet"}), 501
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
