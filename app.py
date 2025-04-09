@@ -374,7 +374,7 @@ def coverage_kmz():
         kml_content = create_coverage_kml(csv_content)
         
         output_kmz = io.BytesIO()
-        with zipfile.ZipFile(output_kmz, 'w', zipfile.ZIP_DEFLATED) as zf:
+        with zipfile.ZipFile(output_kmz.kmz, 'w', zipfile.ZIP_DEFLATED) as zf:
             zf.writestr("doc.kml", kml_content)
         output_kmz.seek(0)
         
@@ -401,7 +401,7 @@ def points_kmz():
         kml_content = create_points_kml(csv_content, color, size, icon)
         
         output_kmz = io.BytesIO()
-        with zipfile.ZipFile(output_kmz, 'w', zipfile.ZIP_DEFLATED) as zf:
+        with zipfile.ZipFile(output_kmz.kmz, 'w', zipfile.ZIP_DEFLATED) as zf:
             zf.writestr("doc.kml", kml_content)
         output_kmz.seek(0)
         
@@ -414,7 +414,7 @@ def points_kmz():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/convert-clf', methods=['POST'])
+@app.route('/convert-clf.clf', methods=['POST'])
 def convert_clf():
     try:
         if 'file' not in request.files:
