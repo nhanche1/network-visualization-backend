@@ -381,7 +381,7 @@ def coverage_kmz():
         return send_file(
             output_kmz,
             mimetype='application/vnd.google-earth.kmz',
-            download_name=f"Network_Coverage_{datetime.now().strftime('%Y%m%d_%H%M')}*.kmz",
+            download_name=f"Network_Coverage_{datetime.now().strftime('%Y%m%d_%H%M')}.kmz",
             as_attachment=True
         )
     except Exception as e:
@@ -401,7 +401,7 @@ def points_kmz():
         kml_content = create_points_kml(csv_content, color, size, icon)
         
         output_kmz = io.BytesIO()
-        with zipfile.ZipFile(output_kmz.kmz, 'w', zipfile.ZIP_DEFLATED) as zf:
+        with zipfile.ZipFile(output_kmz *.kmz, 'w', zipfile.ZIP_DEFLATED) as zf:
             zf.writestr("doc.kml", kml_content)
         output_kmz.seek(0)
         
@@ -414,7 +414,7 @@ def points_kmz():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/convert-clf*.clf', methods=['POST'])
+@app.route('/convert-clf', methods=['POST'])
 def convert_clf():
     try:
         if 'file' not in request.files:
@@ -427,7 +427,7 @@ def convert_clf():
         return send_file(
             io.BytesIO(clf_content.encode('utf-8')),
             mimetype='text/plain',
-            download_name=f"Network_Data_{datetime.now().strftime('%Y%m%d_%H%M')}*.clf",
+            download_name=f"Network_Data_{datetime.now().strftime('%Y%m%d_%H%M')} *.clf",
             as_attachment=True
         )
     except Exception as e:
