@@ -401,7 +401,7 @@ def points_kmz():
         kml_content = create_points_kml(csv_content, color, size, icon)
         
         output_kmz = io.BytesIO()
-        with zipfile.ZipFile(output_kmz *.kmz, 'w', zipfile.ZIP_DEFLATED) as zf:
+        with zipfile.ZipFile(output_kmz.kmz, 'w', zipfile.ZIP_DEFLATED) as zf:
             zf.writestr("doc.kml", kml_content)
         output_kmz.seek(0)
         
