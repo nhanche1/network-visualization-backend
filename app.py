@@ -414,7 +414,7 @@ def points_kmz():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/convert-clf*.clf', methods=['POST'])
+@app.route('/convert-clf', methods=['POST'])
 def convert_clf():
     try:
         if 'file' not in request.files:
@@ -427,7 +427,7 @@ def convert_clf():
         return send_file(
             io.BytesIO(clf_content.encode('utf-8')),
             mimetype='text/plain',
-            download_name=f"Network_Data_{datetime.now().strftime('%Y%m%d_%H%M')}.clf",
+            download_name=f"x *.clf",
             as_attachment=True
         )
     except Exception as e:
